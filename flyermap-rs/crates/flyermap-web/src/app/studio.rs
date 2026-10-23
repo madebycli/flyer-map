@@ -3,13 +3,15 @@
 //! strip lives on them).
 use super::{
     acts::{fly_to, open_subject},
+    draw,
     state::AppState,
 };
 use crate::{
+    drawing::Kind,
     features::studio::{empty_text, rows, tabs, StudioPanel},
     model::Subject,
     platform::{events::page_visible, time::now_ms},
-    shell::{Action, StudioTab, Tool},
+    shell::{Action, StudioTab},
 };
 use flyermap_identity::Action as Right;
 use leptos::prelude::*;
@@ -80,7 +82,7 @@ pub fn panel(state: AppState) -> AnyView {
             on_tab=move |t| state.dispatch(Action::StudioTab(t))
             on_open=on_open
             can_draw=can_draw
-            on_draw=move |()| state.dispatch(Action::SetTool(Tool::Draw))
+            on_draw=move |()| draw::start(state, Kind::Free, None, None)
         />
     }
     .into_any()

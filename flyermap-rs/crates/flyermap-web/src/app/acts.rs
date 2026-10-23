@@ -1,6 +1,7 @@
 //! What an action of a sheet does. One place, so a button in the Studio and the same button in a sheet at the map do the same thing.
-use super::state::AppState;
+use super::{draw, state::AppState};
 use crate::{
+    drawing::Kind,
     engine::LngLat,
     model::{ring_bounds, ring_center, Act, Subject},
     platform::geo,
@@ -88,6 +89,25 @@ pub fn run(state: AppState, subject: Subject, act: Act) {
                 state.dispatch(Action::Close);
             }
             fly_to(state, &subject);
+        }
+        Act::DrawConnect | Act::DrawExtend | Act::Split => {
+            let kind = match act {
+                Act::DrawConnect => Kind::Connect,
+                Act::DrawExtend => Kind::Extend,
+                _ => Kind::Split,
+            };
+            let target = match &subject {
+                Subject::Gebiet(id) => Some(id.clone()),
+                _ => None,
+            };
+            draw::start(state, kind, target, None);
+        }
+        Act::NewGebiet => {
+            let gruppe = match &subject {
+                Subject::Gruppe(id) => Some(id.clone()),
+                _ => None,
+            };
+            draw::start(state, Kind::Free, None, gruppe);
         }
         other => {
             state.notify(format!("„{}“ kommt in einem der nächsten Schritte.", crate::features::subject::act_label(other, flyermap_identity::Art::Austeilen).0))

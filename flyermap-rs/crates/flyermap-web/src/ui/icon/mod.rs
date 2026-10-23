@@ -14,9 +14,9 @@ mod tests {
     #[test]
     fn every_icon_of_the_react_app_is_there_once() {
         // the 57 of the React app and the ones this app added (speaker, vibrate, studio)
-        assert_eq!(IconName::ALL.len(), 60);
+        assert_eq!(IconName::ALL.len(), 62);
         let names: HashSet<_> = IconName::ALL.iter().map(|i| i.as_str()).collect();
-        assert_eq!(names.len(), 60);
+        assert_eq!(names.len(), 62);
         for name in ["check", "cloudOk", "cloudOff", "mapPin", "menu", "chevron", "back", "palette", "help"] {
             assert!(names.contains(name), "{name}");
         }

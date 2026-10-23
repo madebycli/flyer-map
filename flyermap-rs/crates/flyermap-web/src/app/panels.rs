@@ -59,6 +59,7 @@ pub fn panel_view(state: AppState, panel: Panel) -> AnyView {
             let role = help_role(state.session.rights.with_untracked(|r| r.strongest()));
             view! { <HelpSheet role=role on_close=close /> }.into_any()
         }
-        Panel::Studio => view! { <Sheet icon=IconName::Studio title="Studio" on_close=close>{super::studio::panel(state)}</Sheet> }.into_any(),
+        Panel::SaveGebiet => super::draw_views::save_sheet(state),
+        Panel::Studio =>view! { <Sheet icon=IconName::Studio title="Studio" on_close=close>{super::studio::panel(state)}</Sheet> }.into_any(),
     }
 }

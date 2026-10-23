@@ -78,6 +78,16 @@ pub fn install(session: Session) {
             JsValue::from_str(&found.unwrap_or_default())
         }),
     );
+    // gebiete(): the Gebiete of the world as JSON `[{id, name, ring}]`
+    set(
+        &api,
+        "gebiete",
+        closure(move |_| {
+            let list: Vec<_> =
+                session.world.with_untracked(|w| w.gebiete.iter().map(|g| serde_json::json!({ "id": g.id, "name": g.name, "ring": g.ring })).collect());
+            JsValue::from_str(&serde_json::Value::Array(list).to_string())
+        }),
+    );
     // status(key): what this device shows for a key
     set(
         &api,

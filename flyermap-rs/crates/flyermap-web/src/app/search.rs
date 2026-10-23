@@ -1,8 +1,9 @@
 //! The bar's search wired to the app: the index (`flyermap-search`) is kept in step with the world, the rights and the loaded map data; every keystroke asks it
 //! in the situation of the person (where the map is, which Gebiet is under its middle, what was used lately); a picked result opens its sheet at the thing and
 //! flies the map there, a picked command does its thing. Recents are kept per Aktion on this device.
-use super::{acts, state::AppState};
+use super::{acts, draw, state::AppState};
 use crate::{
+    drawing::Kind,
     features::search::{
         ask,
         commands::{entries as command_entries, spec_of_key},
@@ -42,7 +43,7 @@ fn centre_of(state: AppState) -> Option<[f64; 2]> {
 fn run_command(state: AppState, id: CommandId) {
     match id {
         CommandId::Mark => state.dispatch(Action::SetTool(Tool::Mark)),
-        CommandId::NewGebiet => state.dispatch(Action::SetTool(Tool::Draw)),
+        CommandId::NewGebiet => draw::start(state, Kind::Free, None, None),
         CommandId::Overview => state.open(Panel::Overview),
         CommandId::Studio => state.open(Panel::Studio),
         CommandId::Settings => state.open(Panel::Settings),

@@ -26,7 +26,7 @@ fn on_tap(state: AppState, map: &FieldMap, p: [f64; 2]) {
     match state.shell.with_untracked(|s| s.tool) {
         Tool::Idle => {}
         Tool::Mark => return crate::app::marking::tap(state, map, p),
-        Tool::Draw => return,
+        Tool::Draw => return crate::app::draw::tap(state, map, p),
     }
     let reveal_map = map.clone();
     // what is under the finger opens its sheet: a house, a street piece, else the Gebiet; nothing: a sheet that is open goes away

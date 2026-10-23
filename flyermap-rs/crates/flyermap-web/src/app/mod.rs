@@ -1,6 +1,8 @@
 //! The app: the state, the frame with its zones, what a sheet's action does, the effects of the settings, the boot.
 pub mod acts;
 pub mod debug;
+pub mod draw;
+pub mod draw_views;
 pub mod effects;
 pub mod frame;
 pub mod marking;

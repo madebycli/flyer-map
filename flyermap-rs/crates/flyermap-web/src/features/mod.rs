@@ -2,6 +2,7 @@
 //!
 //! The three anchors of the phone: the command bar (`search`), the mode button (`mode`), the quick bar (`quick`). Everything else shows up at
 //! the thing it concerns (`subject`) or in the Studio, and the live strip (`live`) says who is out.
+pub mod draw;
 pub mod help;
 pub mod join;
 pub mod live;

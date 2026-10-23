@@ -1,7 +1,7 @@
 //! The frame of the ready app: the map and the zones over it. This file only arranges; every anchor is a feature that gets its data from the state.
 use super::{
     acts::{locate, open_subject},
-    marking,
+    draw, draw_views, marking,
     panels::panel_view,
     search, shortcuts,
     state::AppState,
@@ -68,12 +68,19 @@ pub fn Frame(state: AppState) -> impl IntoView {
     marking::install(state);
     let mark_model = marking::panel_model(state);
     let kind = Signal::derive(move || if s.world.with(|w| w.aktion.art == flyermap_identity::Art::Abholen) { Kind::Collection } else { Kind::Distribution });
-    let mode_icon = Signal::derive(move || icon_of(state.mark.with(|m| m.mode)));
-    let mode_label = Signal::derive(move || if tool.get() == Tool::Mark { "Markieren beenden".to_string() } else { "Markieren".to_string() });
+    draw::install(state);
+    // the one big button starts marking, and puts whatever tool is up (marking, drawing) down again
+    let mode_icon = Signal::derive(move || if tool.get() == Tool::Draw { IconName::Polygon } else { icon_of(state.mark.with(|m| m.mode)) });
+    let mode_label = Signal::derive(move || match tool.get() {
+        Tool::Idle => "Markieren".to_string(),
+        Tool::Mark => "Markieren beenden".to_string(),
+        Tool::Draw => "Zeichnen beenden".to_string(),
+    });
     let on_mode = move |()| {
-        let next = if tool.get_untracked() == Tool::Mark { Tool::Idle } else { Tool::Mark };
+        let next = if tool.get_untracked() == Tool::Idle { Tool::Mark } else { Tool::Idle };
         state.dispatch(Action::SetTool(next));
     };
+    let mode_available = Signal::derive(move || may_mark.get() || tool.get() != Tool::Idle);
 
     view! {
         <div
@@ -115,6 +122,7 @@ pub fn Frame(state: AppState) -> impl IntoView {
                             on_confirm=move |()| marking::confirm(state)
                         />
                     </Show>
+                    <Show when=move || tool.get() == Tool::Draw>{draw_views::panel(state)}</Show>
                 </Zone>
                 <Zone zone=ZoneId::Bottom>
                     <QuickBar
@@ -127,7 +135,7 @@ pub fn Frame(state: AppState) -> impl IntoView {
                         }
                         on_note=move |text| state.notify(text)
                     />
-                    <ModeButton icon=mode_icon active=Signal::derive(move || tool.get() == Tool::Mark) label=mode_label available=may_mark on_click=on_mode />
+                    <ModeButton icon=mode_icon active=Signal::derive(move || tool.get() != Tool::Idle) label=mode_label available=mode_available on_click=on_mode />
                 </Zone>
                 <Zone zone=ZoneId::Sheet>{move || panel.get().map(|p| panel_view(state, p))}</Zone>
                 <Zone zone=ZoneId::Overlay />

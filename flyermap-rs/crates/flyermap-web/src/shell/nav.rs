@@ -13,6 +13,8 @@ pub enum Panel {
     Help,
     /// The Studio as a sheet (on a phone); from 900 px it is the column.
     Studio,
+    /// Name and Gruppe of a Gebiet that was just drawn (the drawing waits behind it).
+    SaveGebiet,
 }
 
 impl Panel {

@@ -1,6 +1,7 @@
 //! The app's reactive state, provided once as context: the shell (one signal around the pure [`Shell`]), the device settings, the session
 //! (backend and what it said) and the few values the zones share.
 use crate::{
+    drawing::{Draw, Ready},
     engine::Route,
     features::settings::Prefs,
     map::pointer::PointerDriver,
@@ -26,6 +27,12 @@ pub struct AppState {
     pub route: RwSignal<Option<Route>>,
     /// What the last markings replaced, newest last (the undo).
     pub undo: RwSignal<Vec<Applied>>,
+    /// The drawing tool: the kind, the target Gebiet, the points tapped.
+    pub draw: RwSignal<Draw>,
+    /// A finished drawing that waits for its name (the save sheet is open).
+    pub saving: RwSignal<Option<Ready>>,
+    /// What the server said when it refused to store a drawing.
+    pub save_error: RwSignal<Option<String>>,
     /// The finger driver of the map, once the map exists.
     pub driver: StoredValue<Option<Rc<PointerDriver>>, LocalStorage>,
 }
@@ -51,6 +58,9 @@ impl AppState {
             mark: RwSignal::new(mark),
             route: RwSignal::new(None),
             undo: RwSignal::new(Vec::new()),
+            draw: RwSignal::new(Draw::default()),
+            saving: RwSignal::new(None),
+            save_error: RwSignal::new(None),
             driver: StoredValue::new_local(None),
         }
     }
