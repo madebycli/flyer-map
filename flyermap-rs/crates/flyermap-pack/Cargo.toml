@@ -2,17 +2,19 @@
 name = "flyermap-pack"
 version.workspace = true
 edition.workspace = true
-description = "Map data of a Gebiet: which parts to fetch, the Overpass query, the answer cleaned up and packed (JSON, gzip). Pure: the caller fetches and stores."
+description = "Map data of a Gebiet: which parts to fetch, the Overpass query, the answer cleaned up and packed (JSON, gzip), and the derived network as a content-addressed binary pack with deltas. Pure: the caller fetches and stores."
 publish.workspace = true
 
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+thiserror.workspace = true
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 libm = "0.2"
-
-[dev-dependencies]
-flyermap-engine = { path = "../flyermap-engine" }
+# The derived pack: the engine derives, bincode is the engine's own blob format (`session_add_blob`), SHA-256 names and seals the bytes.
+flyermap-engine = { path = "../flyermap-engine", default-features = false }
+bincode = "1"
+sha2 = "0.10"
 
 [lints]
 workspace = true

@@ -647,11 +647,14 @@ dependencies = [
 name = "flyermap-pack"
 version = "0.1.0"
 dependencies = [
+ "bincode",
  "flate2",
  "flyermap-engine",
  "libm",
  "serde",
  "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

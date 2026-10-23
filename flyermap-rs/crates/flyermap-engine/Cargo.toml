@@ -8,8 +8,14 @@ publish.workspace = true
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = ["c-abi"]
+# The WebAssembly C ABI (alloc, derive_area, session_*): what the browser loads as `engine.wasm`. A Rust host that links the engine as a library
+# (the map-data pack on the Worker) uses `default-features = false`, so these entry points do not become exports of its own module.
+c-abi = []
+
 [dependencies]
-serde = { version = "1", features = ["derive"] }
+serde ={ version = "1", features = ["derive"] }
 # exact number parsing, as JSON.parse does (coordinates must not move by a bit between the TypeScript and the Rust path)
 serde_json = { version = "1", features = ["float_roundtrip"] }
 unicode-normalization = "0.1"
