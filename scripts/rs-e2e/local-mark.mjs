@@ -136,10 +136,11 @@ async function run(v) {
   // Lasso: circle a group of houses
   await mode('lasso');
   await choose('completed');
-  const fresh = (await pickHouses()).filter((h) => !row.some((r) => r.id === h.id) && h.id !== h1.id);
+  const fresh = (await pickHouses()).filter((h) => !row.some((r) => r.id === h.id) && h.id !== h1.id && !['completed', 'later', 'not-deliverable'].includes(h.state));
   const group = rowOf(fresh, 2);
   check(`${tag}: houses to circle`, group.length === 2);
   const [g0, g1] = group;
+  const was = await page.evaluate((ids) => ids.map((k) => window.__rsApp.status(k)), group.map((h) => h.id)); // what the undo has to bring back (earlier runs leave their marks on the server)
   const pad = 20;
   const ring = [{ x: g0.x - pad, y: g0.y - pad }, { x: g1.x + pad, y: g0.y - pad }, { x: g1.x + pad, y: g0.y + pad }, { x: g0.x - pad, y: g0.y + pad }, { x: g0.x - pad, y: g0.y - pad + 2 }];
   const dense = ring.flatMap((p, i) => (i === 0 ? [p] : Array.from({ length: 6 }, (_, k) => ({ x: ring[i - 1].x + ((p.x - ring[i - 1].x) * (k + 1)) / 6, y: ring[i - 1].y + ((p.y - ring[i - 1].y) * (k + 1)) / 6 }))));
@@ -149,8 +150,8 @@ async function run(v) {
 
   // the undo takes the last marking back
   await page.locator('[data-slot=undo]').click();
-  await page.waitForFunction((ids) => ids.every((k) => window.__rsApp.status(k) === 'open'), group.map((h) => h.id), { timeout: 15000 });
-  check(`${tag}: Rückgängig takes the last marking back`, true);
+  await page.waitForFunction(([ids, before]) => ids.every((k, i) => window.__rsApp.status(k) === before[i]), [group.map((h) => h.id), was], { timeout: 15000 });
+  check(`${tag}: Rückgängig takes the last marking back (each house has the status it had)`, true, was.join(','));
 
   // everything reached the server, which accepted it
   await settleSync();
@@ -160,7 +161,7 @@ async function run(v) {
   const device = await page.evaluate((keys) => keys.map((k) => window.__rsApp.status(k)), touched);
   const differing = touched.filter((k, i) => server[k] !== device[i]);
   check(`${tag}: the server holds what the device marked (read back through /state)`, differing.length === 0 && touched.every((k) => server[k] !== undefined), `${touched.length} keys, ${Object.keys(server).length} in all, differing: ${differing.join(' ')}`);
-  check(`${tag}: the undo reached the server too`, group.every((h) => server[h.id] === 'open'));
+  check(`${tag}: the undo reached the server too`, group.every((h, i) => (server[h.id] ?? 'open') === was[i]));
   const c = await counters(page);
   check(`${tag}: no tile failed on the way`, c.protocol.failed === 0);
 

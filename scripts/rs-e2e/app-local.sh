@@ -3,7 +3,7 @@
 #   map data source (Overpass stub, answers with a made-up neighbourhood) -> the Rust Worker in workerd (wrangler dev, local D1 seeded from the contract
 #   vectors) -> the app's address (dist-rs plus /api/v5 passed on, one origin).
 #   scripts/rs-web-build.sh --release        first (dist-rs)
-#   scripts/rs-e2e/app-local.sh              start the stack, run the flows `local-sync` and `local-map` (default), stop it
+#   scripts/rs-e2e/app-local.sh              start the stack, run the flows (default: sync, map, mark, search, studio, draw, join, offline), stop it
 #   scripts/rs-e2e/app-local.sh flow1 flow2  other flows (names of scripts/rs-e2e/<name>.mjs)
 #   HOLD=1 scripts/rs-e2e/app-local.sh       only start it and wait (run a flow by hand with BASE=http://127.0.0.1:8160/ node scripts/rs-e2e/<name>.mjs)
 # Ports (override with APP_PORT, WORKER_PORT, STUB_PORT): app 8160, Worker 8790, stub 8795. Never touches production: everything is local.
@@ -39,7 +39,7 @@ setsid node "$ROOT/scripts/rs-e2e/app-server.mjs" "$APP_PORT" "$WORKER_PORT" > "
 sleep 1
 echo "stack is up: app http://127.0.0.1:$APP_PORT/  Worker http://127.0.0.1:$WORKER_PORT/  stub :$STUB_PORT"
 if [ "${HOLD:-}" = "1" ]; then wait; fi
-FLOWS=("$@"); [ ${#FLOWS[@]} -gt 0 ] || FLOWS=(local-sync local-map)
+FLOWS=("$@"); [ ${#FLOWS[@]} -gt 0 ] || FLOWS=(local-sync local-map local-mark local-search local-studio local-draw local-join local-offline)
 status=0
 for f in "${FLOWS[@]}"; do
   echo "== $f"

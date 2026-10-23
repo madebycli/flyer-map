@@ -70,7 +70,9 @@ export const screenFeatures = (page, layer, band) => page.evaluate(([layerId, b]
     const ring = f.geometry.type === 'Polygon' ? f.geometry.coordinates[0] : f.geometry.type === 'LineString' ? f.geometry.coordinates : null;
     if (!ring) continue;
     const pts = ring.map((c) => { const p = m.project(c); return { x: origin.x + p.x, y: origin.y + p.y }; });
-    if (pts.every((p) => p.x > b.x0 && p.x < b.x1 && p.y > b.y0 && p.y < b.y1)) out.push({ id, pts });
+    // the status as drawn: what a marking painted (feature state), else what the tile was cut with
+    const state = f.state?.status ?? ({ c: 'completed', l: 'later', n: 'not-deliverable' }[String(f.properties?.st)] ?? 'open');
+    if (pts.every((p) => p.x > b.x0 && p.x < b.x1 && p.y > b.y0 && p.y < b.y1)) out.push({ id, pts, state });
   }
   return out;
 }, [layer, band]);

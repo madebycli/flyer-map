@@ -7,7 +7,8 @@ import { serve } from '../rs-web-serve.mjs';
 import { VIEWS, launch, mapReady, noOverflow, openPage, rectOf, reporter, screenOf, settle, shots, withDebug } from './lib.mjs';
 
 // a tap on the Gebiet Nordstadt (its middle), as a finger would: through the map
-const tapNordstadt = async (page) => { const p = await screenOf(page, 13.0025, 51.20425); await page.mouse.click(p.x, p.y); };
+// a tap on the Gebiet Nordstadt (its middle), as a finger would: through the map, from a zoom below the one the streets and houses start at (a tap lands on those first)
+const tapNordstadt = async (page) => { await page.evaluate(() => window.__rsMap.jumpTo({ center: [13.0025, 51.20425], zoom: 10 })); await new Promise((r) => setTimeout(r, 400)); const p = await screenOf(page, 13.0025, 51.20425); await page.mouse.click(p.x, p.y); };
 
 const PORT = 8151;
 const BASE = `http://127.0.0.1:${PORT}/`;
@@ -88,15 +89,15 @@ async function run(view) {
   check(`${tag}: a second tap lets go`, (await chips.first().getAttribute('aria-pressed')) === 'false');
 
   // search: suggestions when empty, names when typed, commands that open sheets
-  const field = page.getByRole('textbox', { name: 'Suchen' });
+  const field = page.getByRole('combobox', { name: 'Suchen' });
   await field.click();
   await page.locator('.v5-spot').waitFor();
   const offered = await page.locator('.v5-result b').allInnerTexts();
-  check(`${tag}: an empty field offers the commands`, offered.length === (wide ? 3 : 4) && offered.includes('Einstellungen'), offered.join(', '));
+  check(`${tag}: an empty field offers the commands (the Studio only where it is not a column)`, ['Markieren', 'Übersicht', 'Einstellungen'].every((c) => offered.includes(c)) && offered.includes('Studio') === !wide, offered.join(', '));
   const barBefore = await rectOf(page, '.v5-cmd');
   await field.fill('nord');
   const found = await page.locator('.v5-result').allInnerTexts();
-  check(`${tag}: a few letters find a Gebiet, a Gruppe and a Lauf`, found.length === 3, found.join(' | ').replace(/\n/g, ' '));
+  check(`${tag}: a few letters find a Gebiet and a Gruppe`, found.length === 2 && /Nordstadt/.test(found[0]) && /Gruppe Nord/.test(found[1]), found.join(' | ').replace(/\n/g, ' '));
   check(`${tag}: the bar keeps its place while the card is open`, JSON.stringify(barBefore) === JSON.stringify(await rectOf(page, '.v5-cmd')));
   await settle(page, '.v5-spot');
   await page.screenshot({ path: `${shots}/${tag}-search.png` });

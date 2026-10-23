@@ -1,6 +1,7 @@
 //! The bridge to the old server: `/api/v5/campaigns/<id>/...` of the Rust Worker (Plan 059 M4), same origin, session cookie. Real data and real
 //! rights until the v6 server exists. What the old server cannot do (people, invitations, drawing) answers [`BackendError::Unsupported`], and
 //! the screens say so instead of offering a button that fails.
+pub mod cache;
 pub mod rooms;
 pub mod translate;
 
@@ -45,7 +46,16 @@ impl Backend for V5Backend {
     fn boot(&self) -> Fut<Result<Boot, BackendError>> {
         let base = self.base.clone();
         Box::pin(async move {
-            let meta: Meta = http::get_json(&format!("{base}/meta")).await?;
+            // the last answer stands in when the server cannot be reached (a start in a cellar, on a field without signal)
+            let text = match http::get_text(&format!("{base}/meta")).await {
+                Ok(text) => {
+                    cache::put_text(&base, "meta", &text).await;
+                    text
+                }
+                Err(e) if cache::may_use_cache(&e) => cache::get_text(&base, "meta").await.ok_or(e)?,
+                Err(e) => return Err(e.into()),
+            };
+            let meta: Meta = serde_json::from_str(&text).map_err(|_| HttpError::bad_answer())?;
             let mut boot = translate::boot(&meta);
             // the Räume of the old server are the Läufe; a failing list must not stop the start
             if let Ok(text) = http::get_text(&format!("{base}/rooms")).await {
@@ -56,11 +66,17 @@ impl Backend for V5Backend {
     }
 
     fn pack(&self, which: &PackRef) -> Fut<Result<Option<Vec<u8>>, BackendError>> {
-        let url = pack_url(&self.base, which);
+        let (base, url) = (self.base.clone(), pack_url(&self.base, which));
         Box::pin(async move {
+            let key = format!("pack:{url}");
             match http::get_bytes(&url).await {
-                Ok(bytes) => Ok(Some(bytes.to_vec())),
+                Ok(bytes) => {
+                    let bytes = bytes.to_vec();
+                    cache::put_bytes(&base, &key, &bytes).await;
+                    Ok(Some(bytes))
+                }
                 Err(e) if e.status == 404 => Ok(None),
+                Err(e) if cache::may_use_cache(&e) => Ok(Some(cache::get_bytes(&base, &key).await.ok_or(e)?)),
                 Err(e) => Err(e.into()),
             }
         })

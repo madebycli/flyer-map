@@ -68,8 +68,8 @@ async function run(v) {
   check(`${tag}: the locate button shows a dot and flies there`, Math.abs(at.lat - (AREA_N[1] + 0.001)) < 0.0005 && Math.abs(at.lng - (AREA_N[0] + 0.001)) < 0.0005, JSON.stringify(at));
 
   // the theme can change under the map: the style is swapped, our layers come back, tiles keep coming
-  await page.getByRole('textbox', { name: 'Suchen' }).click();
-  await page.getByRole('textbox', { name: 'Suchen' }).fill('einst');
+  await page.getByRole('combobox', { name: 'Suchen' }).click();
+  await page.getByRole('combobox', { name: 'Suchen' }).fill('einst');
   await page.locator('.v5-result').first().click();
   await page.locator('.v5-sheet').waitFor();
   const target = v.theme === 'dark' ? 'Hell' : 'Dunkel';

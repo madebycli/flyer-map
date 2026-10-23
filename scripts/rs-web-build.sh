@@ -35,6 +35,9 @@ for f in maplibre-gl.mjs maplibre-gl-shared.mjs maplibre-gl-worker.mjs; do cp "$
 cat "$MAPLIBRE/maplibre-gl.css" >> "$OUT/app.css"
 cp "$ROOT/src/v5/engine/wasm/engine.wasm" "$OUT/engine.wasm"
 cp "$CRATE/assets/web/engine-worker.js" "$OUT/engine-worker.js"
+cp "$CRATE/assets/web/manifest.webmanifest" "$OUT/manifest.webmanifest"
+# the service worker last: it lists every file of the build
+node "$ROOT/scripts/rs-web-sw.mjs" "$OUT" "$CRATE/assets/web/sw.js"
 
 WASM="$OUT/flyermap-web_bg.wasm"
 RAW=$(wc -c < "$WASM"); GZ=$(gzip -9 -c "$WASM" | wc -c)
