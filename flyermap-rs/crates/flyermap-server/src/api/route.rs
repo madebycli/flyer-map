@@ -1,4 +1,30 @@
 //! The paths of `/v6`.
+
+/// What a device asks of the Akteur of an Aktion: the paths below `/v6/aktionen/:id/`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Part {
+    Push,
+    Snapshot,
+    Marks,
+    Notes,
+    Catchup,
+    Live,
+}
+
+impl Part {
+    /// The path the Akteur itself serves it under (`akteur::serve`; the live channel is the Durable Object's own).
+    pub fn internal_path(self) -> &'static str {
+        match self {
+            Part::Push => "/push",
+            Part::Snapshot => "/snapshot",
+            Part::Marks => "/marks",
+            Part::Notes => "/notes",
+            Part::Catchup => "/catchup",
+            Part::Live => "/live",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Route {
     Organisations,
@@ -20,6 +46,7 @@ pub enum Route {
     RecoveryCodes,
     Aktionen,
     People(String),
+    Akteur(String, Part),
     Invites,
     Invite(String),
     InviteRedeem,
@@ -55,6 +82,12 @@ pub fn route(path: &str) -> Option<Route> {
         ["recovery-codes"] => Route::RecoveryCodes,
         ["aktionen"] => Route::Aktionen,
         ["aktionen", a, "people"] => Route::People(id(a)?),
+        ["aktionen", a, "push"] => Route::Akteur(id(a)?, Part::Push),
+        ["aktionen", a, "snapshot"] => Route::Akteur(id(a)?, Part::Snapshot),
+        ["aktionen", a, "marks"] => Route::Akteur(id(a)?, Part::Marks),
+        ["aktionen", a, "notes"] => Route::Akteur(id(a)?, Part::Notes),
+        ["aktionen", a, "catchup"] => Route::Akteur(id(a)?, Part::Catchup),
+        ["aktionen", a, "live"] => Route::Akteur(id(a)?, Part::Live),
         ["invites"] => Route::Invites,
         ["invites", "redeem"] => Route::InviteRedeem,
         ["invites", i] => Route::Invite(id(i)?),
@@ -87,6 +120,12 @@ impl Route {
             Route::RecoveryCodes => "/v6/recovery-codes",
             Route::Aktionen => "/v6/aktionen",
             Route::People(_) => "/v6/aktionen/:id/people",
+            Route::Akteur(_, Part::Push) => "/v6/aktionen/:id/push",
+            Route::Akteur(_, Part::Snapshot) => "/v6/aktionen/:id/snapshot",
+            Route::Akteur(_, Part::Marks) => "/v6/aktionen/:id/marks",
+            Route::Akteur(_, Part::Notes) => "/v6/aktionen/:id/notes",
+            Route::Akteur(_, Part::Catchup) => "/v6/aktionen/:id/catchup",
+            Route::Akteur(_, Part::Live) => "/v6/aktionen/:id/live",
             Route::Invites => "/v6/invites",
             Route::Invite(_) => "/v6/invites/:id",
             Route::InviteRedeem => "/v6/invites/redeem",
@@ -106,6 +145,8 @@ mod tests {
         assert_eq!(route("/v6/invites/redeem"), Some(Route::InviteRedeem));
         assert_eq!(route("/v6/invites/i_1"), Some(Route::Invite("i_1".into())));
         assert_eq!(route("/v6/aktionen/a1/people"), Some(Route::People("a1".into())));
+        assert_eq!(route("/v6/aktionen/a1/push"), Some(Route::Akteur("a1".into(), Part::Push)));
+        assert_eq!(route("/v6/aktionen/a1/live"), Some(Route::Akteur("a1".into(), Part::Live)));
         assert_eq!(route("/v6/devices/"), Some(Route::Devices), "a trailing slash is tolerated");
         for bad in ["/v5/me", "/v6/", "/v6/nope", "/v6/devices/a b", "/v6/aktionen/a1", "/v6/me/x/y"] {
             assert_eq!(route(bad), None, "{bad}");

@@ -1,8 +1,9 @@
 //! The one decision function. A request brings the caller's grants (loaded once, at the edge); everything allowed or forbidden is answered here.
 use crate::{Action, AktionId, Art, Grant, OrgId, Resource, Role, Scope};
+use serde::{Deserialize, Serialize};
 
 /// All grants of one session. Cheap to build, cheap to ask.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AccessSet {
     pub grants: Vec<Grant>,
 }

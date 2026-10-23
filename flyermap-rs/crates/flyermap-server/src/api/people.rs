@@ -50,6 +50,7 @@ pub async fn revoke<D: Db>(c: &Ctx<'_, D>, id: &str) -> Done {
         return Err(fail(Code::Conflict, "the last owner cannot be removed"));
     }
     grants::revoke(c.db, id, c.now()).await?;
+    super::akteur::kick_grant(c, &row.org_id, row.aktion_id.as_deref(), &row.person_id).await?;
     audit::record(
         c.db,
         c.now(),

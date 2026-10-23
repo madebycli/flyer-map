@@ -1,5 +1,6 @@
 //! The list of devices a person is signed in on, and signing one out.
 use super::Ctx;
+use crate::akteur::Kick;
 use crate::directory::audit::Event;
 use crate::{
     directory::{audit, sessions},
@@ -26,5 +27,6 @@ pub async fn revoke<D: Db>(c: &Ctx<'_, D>, id: &str) -> Done {
     }
     audit::record(c.db, c.now(), &Event { actor: Some(&me.person.id), org: None, aktion: None, action: "session.revoke", target: Some(id), detail: None })
         .await?;
+    super::akteur::kick_session(c, &me.access, &Kick::session(&me.person.id, id)).await?;
     Ok(Response::json(200, &json!({ "ok": true })))
 }

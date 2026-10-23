@@ -1,5 +1,9 @@
 //! A whole server in a test: SQLite, a clock you can move, deterministic "randomness", captured logs.
 #![allow(dead_code)]
+pub mod akteure;
+pub mod aktion;
+
+use akteure::LocalAkteure;
 use flyermap_host::{
     db::sqlite::SqliteDb,
     http::request::Request,
@@ -16,6 +20,7 @@ use std::{
 pub const ORIGIN: &str = "https://app.test";
 pub const SETUP_KEY: &str = "setup-key-for-tests";
 
+#[derive(Debug)]
 pub struct Reply {
     pub status: u16,
     pub json: Value,
@@ -30,7 +35,7 @@ impl Reply {
 }
 
 pub struct World {
-    pub app: App<SqliteDb>,
+    pub app: App<SqliteDb, LocalAkteure>,
     pub clock: Rc<Cell<u64>>,
     pub logs: Rc<RefCell<Vec<String>>>,
 }
@@ -77,7 +82,7 @@ impl World {
             Box::new(SoftKdf),
             &vars_from(vars),
         );
-        World { app: App::new(db, env), clock, logs }
+        World { app: App::new(db, env).with_akteure(LocalAkteure::new(clock.clone())), clock, logs }
     }
 
     pub fn advance(&self, ms: u64) {
@@ -144,5 +149,43 @@ impl World {
     /// The error lines in the log (for tests that expect a 500 and want to know why).
     pub fn errors(&self) -> Vec<String> {
         self.logs.borrow().iter().filter(|l| l.contains("\"lvl\":\"error\"")).cloned().collect()
+    }
+}
+
+impl World {
+    /// Commands pushed to the Akteur of an Aktion (`POST /v6/aktionen/:id/push`).
+    pub fn push(&self, cookie: &str, aktion: &str, commands: &[flyermap_protocol::Command]) -> Reply {
+        self.post(&format!("/v6/aktionen/{aktion}/push"), json!({ "commands": commands }), Some(cookie))
+    }
+
+    /// One command, and the verdict it got (the answer inside the 200).
+    pub fn command(&self, cookie: &str, aktion: &str, body: flyermap_protocol::Body) -> Value {
+        let cid = format!("c{}", self.clock.get());
+        self.advance(1);
+        let r = self.push(cookie, aktion, &[flyermap_protocol::Command { cid: flyermap_protocol::CommandId::new(&cid), body }]);
+        assert_eq!(r.status, 200, "{:?}", r.json);
+        r.json["answers"][0]["verdict"].clone()
+    }
+
+    /// A WebSocket the way a page opens it: with the cookie and the `Origin` of the page. Returns the connection, or the refusal.
+    pub fn connect(&self, cookie: &str, aktion: &str) -> Result<String, Reply> {
+        self.connect_from(cookie, aktion, ORIGIN)
+    }
+
+    pub fn connect_from(&self, cookie: &str, aktion: &str, origin: &str) -> Result<String, Reply> {
+        let request = Request::new("GET", &format!("{ORIGIN}/v6/aktionen/{aktion}/live")).with_header("cookie", cookie).with_header("origin", origin);
+        match futures::executor::block_on(self.app.live_link(&request)).expect("a live route") {
+            Ok(link) => Ok(self.app.akteure.connect(link)),
+            Err(f) => Err(Reply { status: f.code.status(), json: f.response().body_json(), cookie: None }),
+        }
+    }
+
+    /// Someone who joined with an invitation: the guest's cookie.
+    pub fn guest(&self, owner: &str, role: &str, scope: Value) -> String {
+        let made = self.post("/v6/invites", json!({ "role": role, "scope": scope }), Some(owner));
+        assert_eq!(made.status, 201, "{:?}", made.json);
+        let joined = self.post("/v6/invites/redeem", json!({ "code": made.json["code"], "display_name": "Berta", "label": "Handy" }), None);
+        assert_eq!(joined.status, 200, "{:?}", joined.json);
+        joined.cookie.unwrap()
     }
 }

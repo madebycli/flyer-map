@@ -1,5 +1,6 @@
 //! Creating an Organisation with its first owner, and the person's own account: `/v6/organisations`, `/v6/me`.
 use super::{opt_text, text, Ctx};
+use crate::akteur::Kick;
 use crate::directory::audit::Event;
 use crate::{
     auth::{brake, caller::access_of, session},
@@ -94,6 +95,7 @@ pub async fn change_password<D: Db>(c: &Ctx<'_, D>) -> Done {
     let hash = kdf::hash_password(c.env.kdf.as_ref(), &c.env.config, &new, &c.env.bytes::<16>()).await;
     credentials::set_password(c.db, &me.person.id, &hash, c.now()).await?;
     let others = flyermap_server_sessions_revoke(c, &me.person.id, &me.session.id).await?;
+    super::akteur::kick_session(c, &me.access, &Kick::others(&me.person.id, &me.session.id)).await?;
     audit::record(
         c.db,
         c.now(),
@@ -156,7 +158,7 @@ pub async fn create_organisation<D: Db>(c: &Ctx<'_, D>) -> Done {
     let opened = session::open(c.db, c.env, &person_id, "setup", "Gerät").await?;
     let access = access_of(c.db, &person_id, now).await?;
     let caller = crate::auth::Caller { person, session: opened.session, access };
-    let inner = Ctx { db: c.db, env: c.env, request: c.request, caller: Some(caller) };
+    let inner = Ctx::new(c.db, c.env, c.request, Some(caller));
     let mut response = Response::json(201, &json!({ "organisation": { "id": org_id, "name": name }, "me": me_json(&inner).await? }));
     response.set_header("set-cookie", &opened.set_cookie);
     Ok(response)

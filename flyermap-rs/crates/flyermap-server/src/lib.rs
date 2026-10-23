@@ -1,7 +1,8 @@
-//! The Flyer Map 6 server (Plan 061). Today: the directory and the sign-in/invitation API under `/v6`. The Aktion actors join it next.
+//! The Flyer Map 6 server (Plan 061): the directory and the sign-in/invitation API under `/v6`, and the way to the Akteur of each Aktion.
 //!
-//! `directory` (queries on the D1 database, one file per table), `auth` (sign-in ceremonies and the caller of a request), `api` (the HTTP
+//! `akteur` (edge → Akteur: link, HTTP surface, live channel), `directory` (queries on the D1 database, one file per table), `auth` (sign-in ceremonies and the caller of a request), `api` (the HTTP
 //! handlers), `app` (puts a request through: origin check, caller, route, log line).
+pub mod akteur;
 pub mod api;
 pub mod app;
 pub mod auth;

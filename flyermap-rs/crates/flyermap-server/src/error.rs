@@ -19,6 +19,8 @@ pub enum Code {
     CrossOrigin,
     MethodNotAllowed,
     Internal,
+    /// A part we depend on does not answer (the Akteur of an Aktion): worth trying again.
+    Unavailable,
 }
 
 impl Code {
@@ -34,6 +36,7 @@ impl Code {
             Code::UnsupportedMediaType => 415,
             Code::RateLimited => 429,
             Code::Internal => 500,
+            Code::Unavailable => 503,
         }
     }
 
@@ -54,6 +57,7 @@ impl Code {
             Code::CrossOrigin => "cross_origin",
             Code::MethodNotAllowed => "method_not_allowed",
             Code::Internal => "internal",
+            Code::Unavailable => "unavailable",
         }
     }
 }

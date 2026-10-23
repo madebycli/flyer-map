@@ -11,6 +11,8 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 flyermap-host = { path = "../flyermap-host" }
 flyermap-identity = { path = "../flyermap-identity" }
+flyermap-aktion = { path = "../flyermap-aktion" }
+flyermap-protocol = { path = "../flyermap-protocol" }
 flyermap-diag = { path = "../flyermap-diag" }
 serde.workspace = true
 serde_json.workspace = true
@@ -27,6 +29,8 @@ wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = ["WorkerGlobalScope", "Crypto", "SubtleCrypto", "CryptoKey"] }
 
 [dev-dependencies]
+flyermap-core = { path = "../flyermap-core" }
+flyermap-aktion = { path = "../flyermap-aktion", features = ["sqlite"] }
 futures = { version = "0.3", default-features = false, features = ["executor"] }
 p256 = { version = "0.13", features = ["ecdsa", "std"] }
 rand_core = { version = "0.6", features = ["getrandom"] }

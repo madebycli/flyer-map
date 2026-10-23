@@ -1,5 +1,6 @@
 //! Signing in with a password (and the second factor, if the person has one), and signing out.
 use super::{accounts::me_json, opt_text, text, Ctx};
+use crate::akteur::Kick;
 use crate::directory::audit::Event;
 use crate::{
     auth::{
@@ -24,7 +25,7 @@ pub async fn signed_in<D: Db>(c: &Ctx<'_, D>, person: persons::Person, via: &str
         &Event { actor: Some(&person.id), org: None, aktion: None, action: "session.open", target: Some(&opened.session.id), detail: Some(via) },
     )
     .await?;
-    let inner = Ctx { db: c.db, env: c.env, request: c.request, caller: Some(Caller { person, session: opened.session, access }) };
+    let inner = Ctx::new(c.db, c.env, c.request, Some(Caller { person, session: opened.session, access }));
     let mut response = Response::json(status, &serde_json::json!({ "me": me_json(&inner).await? }));
     response.set_header("set-cookie", &opened.set_cookie);
     Ok(response)
@@ -96,6 +97,7 @@ pub async fn logout<D: Db>(c: &Ctx<'_, D>) -> Done {
             &Event { actor: Some(&me.person.id), org: None, aktion: None, action: "session.close", target: Some(&me.session.id), detail: None },
         )
         .await?;
+        super::akteur::kick_session(c, &me.access, &Kick::session(&me.person.id, &me.session.id)).await?;
     }
     let mut response = Response::json(200, &serde_json::json!({ "ok": true }));
     response.set_header("set-cookie", &clearing_cookie());

@@ -710,9 +710,12 @@ version = "0.1.0"
 dependencies = [
  "aes-gcm",
  "ciborium",
+ "flyermap-aktion",
+ "flyermap-core",
  "flyermap-diag",
  "flyermap-host",
  "flyermap-identity",
+ "flyermap-protocol",
  "futures",
  "hmac",
  "js-sys",

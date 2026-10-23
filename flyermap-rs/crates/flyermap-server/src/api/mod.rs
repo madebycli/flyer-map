@@ -1,5 +1,6 @@
 //! The HTTP handlers of `/v6`, one file per resource. A handler gets a [`Ctx`], returns `Done<Response>`, and uses `?` for every refusal.
 pub mod accounts;
+pub mod akteur;
 pub mod aktionen;
 pub mod devices;
 pub mod invites;
@@ -11,6 +12,7 @@ pub mod second_factor;
 pub mod sign_in;
 
 use crate::{
+    akteur::Kick,
     auth::Caller,
     env::Env,
     error::{fail, Code, Done},
@@ -18,17 +20,29 @@ use crate::{
 use flyermap_host::{db::Db, http::request::Request};
 use flyermap_identity::{decide, Action, Resource};
 use serde_json::{Map, Value};
+use std::cell::RefCell;
 
 pub struct Ctx<'a, D: Db> {
     pub db: &'a D,
     pub env: &'a Env,
     pub request: &'a Request,
     pub caller: Option<Caller>,
+    /// Live connections to drop once the handler has succeeded (rights ended): `(aktion id, who)`. The app sends them; a failed handler sends none.
+    pub kicks: RefCell<Vec<(String, Kick)>>,
 }
 
 pub type Json = Map<String, Value>;
 
-impl<D: Db> Ctx<'_, D> {
+impl<'a, D: Db> Ctx<'a, D> {
+    pub fn new(db: &'a D, env: &'a Env, request: &'a Request, caller: Option<Caller>) -> Ctx<'a, D> {
+        Ctx { db, env, request, caller, kicks: RefCell::new(Vec::new()) }
+    }
+
+    /// Ask the app to close the live connections `kick` names in the Akteur of `aktion`, after this request has succeeded.
+    pub fn kick(&self, aktion: &str, kick: Kick) {
+        self.kicks.borrow_mut().push((aktion.to_string(), kick));
+    }
+
     pub fn now(&self) -> u64 {
         self.env.now()
     }

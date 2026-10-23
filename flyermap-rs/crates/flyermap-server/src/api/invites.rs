@@ -183,7 +183,7 @@ pub async fn redeem<D: Db>(c: &Ctx<'_, D>) -> Done {
         None => None,
     };
     let caller = Caller { access: access_of(c.db, &person.id, now).await?, person, session };
-    let inner = Ctx { db: c.db, env: c.env, request: c.request, caller: Some(caller) };
+    let inner = Ctx::new(c.db, c.env, c.request, Some(caller));
     let mut response = Response::json(200, &json!({ "me": super::accounts::me_json(&inner).await?, "aktion": aktion, "grant_id": grant_id }));
     if let Some(cookie) = set_cookie {
         response.set_header("set-cookie", &cookie);
