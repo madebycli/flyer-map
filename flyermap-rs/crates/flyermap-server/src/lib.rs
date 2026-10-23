@@ -7,9 +7,9 @@ pub mod app;
 pub mod auth;
 pub mod config;
 pub mod directory;
-pub mod env;
 #[cfg(target_arch = "wasm32")]
 mod entry;
+pub mod env;
 pub mod error;
 pub mod kdf;
 #[cfg(target_arch = "wasm32")]
