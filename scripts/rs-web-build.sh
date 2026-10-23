@@ -9,7 +9,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WS="$ROOT/flyermap-rs"
 CRATE="$WS/crates/flyermap-web"
-OUT="$ROOT/dist-rs"
+OUT="${RS_WEB_OUT:-$ROOT/dist-rs}"   # RS_WEB_OUT: another output directory (size experiments)
+# The wasm build has its own target directory (its flags differ from the native tests' and lints', so the two never rebuild each other).
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$WS/target/web-wasm}"
+TARGET="$CARGO_TARGET_DIR"
+# `erase_components` (Leptos): views are built with erased types, which makes the WebAssembly about 8 % smaller after compression. It is set here, for this
+# build only: nothing else in the workspace uses Leptos. RS_WEB_ERASE=0 turns it off.
+[ "${RS_WEB_ERASE:-1}" = "1" ] && export RUSTFLAGS="--cfg erase_components ${RUSTFLAGS:-}"
 PROFILE=debug; FLAG=()
 [ "${1:-}" = "--release" ] && { PROFILE=${RS_WEB_PROFILE:-web}; FLAG=(--profile "$PROFILE"); }
 
@@ -20,7 +26,7 @@ HAVE=$(wasm-bindgen --version | awk '{print $2}')
 
 (cd "$WS" && cargo build -p flyermap-web --bin flyermap-web --target wasm32-unknown-unknown "${FLAG[@]}")
 rm -rf "$OUT"; mkdir -p "$OUT"
-wasm-bindgen --target web --no-typescript --out-dir "$OUT" "$WS/target/wasm32-unknown-unknown/$PROFILE/flyermap-web.wasm"
+wasm-bindgen --target web --no-typescript --out-dir "$OUT" "$TARGET/wasm32-unknown-unknown/$PROFILE/flyermap-web.wasm"
 
 cp "$CRATE/assets/web/index.html" "$OUT/index.html"
 grep -o "@import '[^']*'" "$CRATE/assets/css/app.css" | sed "s/@import '\(.*\)'/\1/" | while read -r f; do cat "$CRATE/assets/css/$f"; echo; done > "$OUT/app.css"

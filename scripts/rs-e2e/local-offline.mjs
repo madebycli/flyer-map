@@ -33,6 +33,7 @@ check('installable: the page has a manifest with a name, a start page, standalon
 await page.evaluate(() => navigator.serviceWorker.ready);
 const cached = await page.evaluate(async () => { const names = (await caches.keys()).filter((k) => k.startsWith('fm-shell-')); const c = await caches.open(names[0]); return { caches: names.length, files: (await c.keys()).length }; });
 check('the service worker holds the shell of this build', cached.caches === 1 && cached.files >= 10, `${cached.caches} cache, ${cached.files} files`);
+await sleep(2000); // the overlay of known statuses settles after the field (the denominator leaves the not-possible houses out)
 const total = Number(await page.locator('.v5-pill').getAttribute('data-total'));
 // a reload so that the worker controls the page, then the cut
 await page.reload();
@@ -47,8 +48,9 @@ cut = true;
 await page.reload();
 await ready();
 check('offline: a reload still starts the app', (await page.locator('.fm-app').count()) === 1);
+await sleep(2000);
 check('offline: with the same Gebiete and houses', Number(await page.locator('.v5-pill').getAttribute('data-total')) === total, `${total}`);
-check('offline: and the map has its tiles', await page.evaluate(() => window.__rsDebug().protocol.tiles > 0));
+check('offline: and the map has its tiles', await page.waitForFunction(() => window.__rsDebug().protocol.tiles - window.__rsDebug().protocol.empty > 0, null, { timeout: 30000 }).then(() => true, () => false));
 await sleep(500);
 await page.screenshot({ path: `${shots}/390x844-dark-offline-start.png` });
 
