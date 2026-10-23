@@ -68,3 +68,13 @@ pub trait Backend {
         ready(Err(BackendError::Unsupported("Anmelden")))
     }
 }
+
+/// The answer of a future that is ready at once (the mock's are): for native tests, which have no event loop.
+#[cfg(test)]
+pub fn now<T>(mut f: Fut<T>) -> T {
+    let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+    match f.as_mut().poll(&mut cx) {
+        std::task::Poll::Ready(v) => v,
+        std::task::Poll::Pending => panic!("the future was not ready at once"),
+    }
+}

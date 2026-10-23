@@ -6,7 +6,7 @@ pub mod pack;
 pub mod server;
 pub mod synth;
 
-use super::{ready, Backend, BackendError, Boot, Fut, GebietDraft, Joined, PackRef};
+use super::{ready, Backend, BackendError, Boot, Fut, GebietDraft, Joined, PackRef, SignIn};
 use crate::model::{Gebiet, Lauf, Person, World, Zugang};
 use data::Persona;
 use flyermap_identity::OrgId;
@@ -22,6 +22,8 @@ struct State {
     world: World,
     log: server::Log,
     saved: u32,
+    /// The password was right and the second factor is asked for.
+    second_factor: bool,
 }
 
 #[derive(Clone)]
@@ -32,7 +34,8 @@ pub struct MockBackend {
 
 impl MockBackend {
     pub fn new(persona: Persona, now: impl Fn() -> u64 + 'static) -> MockBackend {
-        let state = State { persona, joined: persona != Persona::Stranger, world: data::world(persona), log: server::Log::default(), saved: 0 };
+        let state =
+            State { persona, joined: persona != Persona::Stranger, world: data::world(persona), log: server::Log::default(), saved: 0, second_factor: false };
         MockBackend { state: Rc::new(RefCell::new(state)), now: Rc::new(now) }
     }
 
@@ -150,5 +153,69 @@ impl Backend for MockBackend {
             "2222222222" => ready(Err(BackendError::Unavailable { code: "network".into(), message: "Keine Verbindung zum Server.".into() })),
             _ => invalid("invite_invalid", "Diesen Code kenne ich nicht. Prüfe ihn noch einmal."),
         }
+    }
+
+    fn sign_in(&self, how: SignIn) -> Fut<Result<Joined, BackendError>> {
+        let invalid = |code: &str, message: &str| ready(Err(BackendError::Invalid { code: code.into(), message: message.into() }));
+        let welcome = |s: &mut State| {
+            s.joined = true;
+            s.second_factor = false;
+            ready(Ok(Joined { label: "Anna".into(), guest: false, aktion_name: s.world.aktion.name.clone() }))
+        };
+        let mut s = self.state.borrow_mut();
+        match how {
+            SignIn::Passkey => welcome(&mut s),
+            SignIn::Password { name, password } if name.trim().eq_ignore_ascii_case(data::ACCOUNT_NAME) && password == data::ACCOUNT_PASSWORD => {
+                s.second_factor = true;
+                invalid("totp_required", "Gib den Code aus deiner Authenticator-App ein.")
+            }
+            SignIn::Password { .. } => invalid("credentials_invalid", "Name oder Passwort stimmen nicht."),
+            SignIn::Totp { code } if s.second_factor && code == data::TOTP_CODE => welcome(&mut s),
+            SignIn::Totp { .. } => invalid("totp_invalid", "Dieser Code stimmt nicht. Er wechselt alle 30 Sekunden."),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::backend::now;
+
+    fn stranger() -> MockBackend {
+        MockBackend::new(Persona::Stranger, || 1_800_000_000_000)
+    }
+
+    fn code_of(answer: Result<Joined, BackendError>) -> String {
+        answer.err().map(|e| e.code()).unwrap_or_default()
+    }
+
+    #[test]
+    fn a_stranger_gets_in_with_the_invitation_and_not_before() {
+        let b = stranger();
+        assert_eq!(now(b.boot()).err(), Some(BackendError::Unauthorized));
+        assert_eq!(code_of(now(b.redeem("0000000000"))), "invite_expired");
+        assert_eq!(code_of(now(b.redeem("ABCDEFGHJK"))), "invite_invalid");
+        assert_eq!(code_of(now(b.redeem("2222222222"))), "network");
+        let joined = now(b.redeem("7k2qx-9m4tb")).expect("a typed code is read forgivingly");
+        assert!(joined.guest);
+        assert!(now(b.boot()).is_ok(), "now the Aktion is there");
+    }
+
+    #[test]
+    fn the_account_asks_for_the_second_factor_only_after_the_password() {
+        let b = stranger();
+        let pass = |n: &str, p: &str| SignIn::Password { name: n.into(), password: p.into() };
+        assert_eq!(code_of(now(b.sign_in(pass("anna", "falsch")))), "credentials_invalid");
+        assert_eq!(code_of(now(b.sign_in(SignIn::Totp { code: data::TOTP_CODE.into() }))), "totp_invalid", "the digits alone do not open anything");
+        assert_eq!(code_of(now(b.sign_in(pass(" Anna ", data::ACCOUNT_PASSWORD)))), "totp_required");
+        assert_eq!(code_of(now(b.sign_in(SignIn::Totp { code: "000000".into() }))), "totp_invalid");
+        let joined = now(b.sign_in(SignIn::Totp { code: data::TOTP_CODE.into() })).expect("right digits after the password");
+        assert!(!joined.guest);
+        assert!(now(b.boot()).is_ok());
+    }
+
+    #[test]
+    fn a_passkey_signs_in_at_once() {
+        assert!(!now(stranger().sign_in(SignIn::Passkey)).unwrap().guest);
     }
 }

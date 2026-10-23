@@ -25,14 +25,7 @@ pub fn App(state: AppState) -> impl IntoView {
             </div>
         }
         .into_any(),
-        Phase::NeedsJoin => view! {
-            <div class="v5-root">
-                <Overlay label="Beitreten">
-                    <Card icon=IconName::Lock title="Beitreten" text="Dieses Gerät hat noch keinen Zugang. Der Beitrittsschirm kommt im vierten Schritt." />
-                </Overlay>
-            </div>
-        }
-        .into_any(),
+        Phase::NeedsJoin => view! { <div class="v5-root">{super::join::screen(state)}</div> }.into_any(),
         Phase::Failed { message, code } => view! {
             <div class="v5-root">
                 <Overlay label="Fehler">

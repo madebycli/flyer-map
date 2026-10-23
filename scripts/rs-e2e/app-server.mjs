@@ -22,11 +22,15 @@ export function startApp(dir, port = 8160, workerPort = 8788) {
       req.pipe(up);
       return;
     }
-    const path = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, '');
+    // an invitation link (/beitreten/<code>) opens the app itself, as the real hosting does
+    const wanted = url.pathname.startsWith('/beitreten/') ? '/' : url.pathname;
+    const path = normalize(decodeURIComponent(wanted)).replace(/^(\.\.[/\\])+/, '');
     const file = join(dir, path.endsWith('/') ? `${path}index.html` : path);
     if (!file.startsWith(dir)) { res.writeHead(403).end(); return; }
-    try { res.writeHead(200, { 'content-type': TYPES[extname(file)] ?? 'application/octet-stream', 'cache-control': 'no-store' }).end(await readFile(file)); }
-    catch { res.writeHead(404).end('not found'); }
+    // read first: a missing file is a plain 404 (headers are only written once there is something to send)
+    let body;
+    try { body = await readFile(file); } catch { res.writeHead(404).end('not found'); return; }
+    res.writeHead(200, { 'content-type': TYPES[extname(file)] ?? 'application/octet-stream', 'cache-control': 'no-store' }).end(body);
   });
   return new Promise((resolve) => server.listen(port, '127.0.0.1', () => resolve(server)));
 }

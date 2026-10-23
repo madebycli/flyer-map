@@ -134,6 +134,11 @@ pub fn zugaenge() -> Vec<Zugang> {
 
 /// The one invitation code the mock accepts (Crockford base32, ten characters).
 pub const INVITE_CODE: &str = "7K2QX9M4TB";
+/// An invented account of the mock for trying the sign-in screen (not a secret: the mock has no server behind it).
+pub const ACCOUNT_NAME: &str = "anna";
+pub const ACCOUNT_PASSWORD: &str = "beispiel";
+/// The six digits the mock accepts as the second factor.
+pub const TOTP_CODE: &str = "123456";
 
 pub fn world(persona: Persona) -> World {
     World {

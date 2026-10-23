@@ -5,6 +5,7 @@ pub mod draw;
 pub mod draw_views;
 pub mod effects;
 pub mod frame;
+pub mod join;
 pub mod marking;
 pub mod object;
 pub mod panels;

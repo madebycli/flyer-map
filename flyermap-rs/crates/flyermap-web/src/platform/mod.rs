@@ -1,5 +1,6 @@
 //! Typed wrappers over the browser (`web-sys`): storage, theme, viewport, wake lock, vibration, the document, requests, IndexedDB, page events.
 //! Nothing above this layer calls `web-sys` for these things; every function here fails quietly or with a typed error.
+pub mod clipboard;
 pub mod dom;
 pub mod error;
 pub mod events;
