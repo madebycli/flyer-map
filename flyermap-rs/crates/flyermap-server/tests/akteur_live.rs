@@ -168,3 +168,35 @@ fn a_socket_from_another_site_is_refused() {
     assert_eq!((r.status, r.code()), (403, "cross_origin"));
     assert!(s.w.connect_from(&s.owner, &s.aktion, ORIGIN).is_ok());
 }
+
+#[test]
+fn giving_a_gebiet_to_another_gruppe_sends_every_subscribed_device_to_a_new_snapshot() {
+    let s = setup();
+    let a = &s.w.app.akteure;
+    let (nord, sued) = (member_of(&s, "nord"), member_of(&s, "sued"));
+    let (cn, cs, idle) = (s.w.connect(&nord, &s.aktion).unwrap(), s.w.connect(&sued, &s.aktion).unwrap(), s.w.connect(&s.owner, &s.aktion).unwrap());
+    for c in [&cn, &cs] {
+        a.send(&s.aktion, c, ClientMsg::Subscribe { since: None });
+    }
+    let resyncs = |frames: Vec<ServerFrame>| frames.iter().filter(|f| matches!(f.msg, ServerMsg::Resync { .. })).count();
+    for c in [&cn, &cs, &idle] {
+        a.take(c);
+    }
+    // a new outline in the same Gruppe: nothing to resync
+    assert_eq!(s.w.command(&s.owner, &s.aktion, gebiet_rev("n1", "nord", 0.001, 1))["t"], "accepted");
+    assert_eq!((resyncs(a.take(&cn)), resyncs(a.take(&cs))), (0, 0));
+    // given to the other Gruppe: the one that lost the right is not shown the entry that takes it away, so both are sent to a new snapshot
+    assert_eq!(s.w.command(&s.owner, &s.aktion, gebiet_rev("n1", "sued", 0.001, 2))["t"], "accepted");
+    assert_eq!((resyncs(a.take(&cn)), resyncs(a.take(&cs))), (1, 1));
+    assert_eq!(resyncs(a.take(&idle)), 0, "a device that did not subscribe is not sent anything");
+    // and the snapshot a device then takes is what its rights say now
+    let seen = |cookie: &str| {
+        s.w.get(&format!("/v6/aktionen/{}/snapshot", s.aktion), cookie).json["gebiete"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|g| g["gruppe"].as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    };
+    assert!(seen(&s.owner).iter().filter(|g| *g == "sued").count() == 2, "n1 now belongs to sued, next to s1");
+}

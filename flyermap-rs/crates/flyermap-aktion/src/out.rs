@@ -14,13 +14,15 @@ pub(crate) struct Out {
     /// The Akteur's own clock: it stamps what it removes (clean-ups), so that an old edit cannot bring the removed thing back.
     pub clock: ClockState,
     pub clock_used: bool,
+    /// The command changed who may read a Gebiet (it was given to another Gruppe): devices that held it must take a new snapshot.
+    pub rights_moved: bool,
     now: u64,
     who: String,
 }
 
 impl Out {
     pub fn new(head: u64, clock: ClockState, now: u64, who: &str) -> Out {
-        Out { entries: Vec::new(), head, clock, clock_used: false, now, who: who.to_string() }
+        Out { entries: Vec::new(), head, clock, clock_used: false, rights_moved: false, now, who: who.to_string() }
     }
 
     pub fn head(&self) -> u64 {

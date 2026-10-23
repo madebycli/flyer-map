@@ -77,6 +77,7 @@ pub(super) fn upsert<S: Sql>(sql: &mut S, cx: &Ctx, out: &mut Out, input: &Gebie
         geometry::judge(sql, cx, &ring, old.art, main.as_ref(), &old.id)?;
         geometry::children_stay(sql, &old.id, &ring)?;
     }
+    out.rights_moved |= old.gruppe != input.gruppe;
     out.emit(sql, Change::GebietSet { gebiet: Gebiet { name, ring, gruppe: input.gruppe.clone(), rev: old.rev + 1, ..old } })?;
     Ok(Done::applied(1))
 }

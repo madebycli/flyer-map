@@ -43,6 +43,11 @@ pub struct Handled {
     pub reply: Answer,
     /// The head of the log after the command.
     pub head: u64,
+    /// Entries up to and including this position have been compacted away.
+    pub floor: u64,
+    /// The command changed who may read a Gebiet: a device that holds it, and may not any more, is not shown the entry that takes it away (the entry is
+    /// about a Gebiet it can no longer see). The host tells every connected device to take a new snapshot.
+    pub rights_moved: bool,
     /// The new entries, for every device that is connected: show each one only what [`Audience::sees`] lets it see.
     pub broadcast: Vec<Entry>,
     pub audience: Audience,
@@ -68,6 +73,7 @@ struct Processed {
     head: u64,
     clock: Option<ClockState>,
     replayed: bool,
+    rights_moved: bool,
 }
 
 /// The command as a fixed-size fingerprint, to tell a retry from a different command under the same id.
@@ -161,6 +167,8 @@ impl<S: Sql> Aktion<S> {
             Ok(p) => Handled {
                 reply: Answer { cid: cmd.cid.clone(), verdict: p.verdict },
                 head: p.head,
+                floor: self.floor,
+                rights_moved: p.rights_moved,
                 broadcast: p.entries,
                 audience: p.audience,
                 replayed: p.replayed,
@@ -177,6 +185,8 @@ impl<S: Sql> Aktion<S> {
                 Handled {
                     reply: Answer { cid: cmd.cid.clone(), verdict: Verdict::rejected(reason) },
                     head: self.head,
+                    floor: self.floor,
+                    rights_moved: false,
                     broadcast: Vec::new(),
                     audience,
                     replayed: false,
@@ -211,6 +221,7 @@ impl<S: Sql> Aktion<S> {
                     head: *head,
                     clock: None,
                     replayed: true,
+                    rights_moved: false,
                 });
             }
             if sweep {
@@ -227,7 +238,15 @@ impl<S: Sql> Aktion<S> {
             ids.sort();
             ids.dedup();
             let audience = Audience::new(org, aktion, areas::facts(sql, &ids)?);
-            Ok(Processed { verdict, head: out.head(), clock: out.clock_used.then(|| out.clock.clone()), entries: out.entries, audience, replayed: false })
+            Ok(Processed {
+                verdict,
+                head: out.head(),
+                clock: out.clock_used.then(|| out.clock.clone()),
+                rights_moved: out.rights_moved,
+                entries: out.entries,
+                audience,
+                replayed: false,
+            })
         });
         let done = outcome?;
         *head = done.head;

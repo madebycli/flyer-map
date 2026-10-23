@@ -102,7 +102,9 @@ fn catch_up<S: Sql>(a: &mut Aktion<S>, conn: &Conn, now: u64, since: u64) -> Vec
     vec![ServerFrame::new(ServerMsg::Resync { head: a.head(), floor: a.floor() })]
 }
 
-/// The news of commands for every subscribed connection: `(connection id, frame)`, each cut to what that caller may see.
+/// The news of commands for every subscribed connection: `(connection id, frame)`, each cut to what that caller may see. When a command changed who
+/// may read a Gebiet, every subscribed device is also told to take a new snapshot: one that lost the right is not shown the entry that took it away
+/// (it is about a Gebiet it may not see any more), and would otherwise keep what it had.
 pub fn fan_out(handled: &[Handled], conns: &[Conn], now: u64) -> Vec<(String, ServerFrame)> {
     let mut out = Vec::new();
     for conn in conns.iter().filter(|c| c.subscribed) {
@@ -111,6 +113,9 @@ pub fn fan_out(handled: &[Handled], conns: &[Conn], now: u64) -> Vec<(String, Se
             let entries: Vec<Entry> = h.audience.filter(&caller, now, &h.broadcast);
             if !entries.is_empty() {
                 out.push((conn.id.clone(), ServerFrame::new(ServerMsg::Entries { entries, head: h.head })));
+            }
+            if h.rights_moved {
+                out.push((conn.id.clone(), ServerFrame::new(ServerMsg::Resync { head: h.head, floor: h.floor })));
             }
         }
     }

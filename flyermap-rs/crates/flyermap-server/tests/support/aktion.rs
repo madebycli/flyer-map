@@ -13,6 +13,11 @@ pub fn gruppe(id: &str) -> Body {
 }
 
 pub fn gebiet(id: &str, gruppe: &str, at: f64) -> Body {
+    gebiet_rev(id, gruppe, at, 0)
+}
+
+/// A Gebiet as it is changed: `base_rev` is the revision the change was made on.
+pub fn gebiet_rev(id: &str, gruppe: &str, at: f64, base_rev: u64) -> Body {
     Body::Gebiet {
         gebiet: GebietIn {
             id: GebietId::new(id),
@@ -21,7 +26,7 @@ pub fn gebiet(id: &str, gruppe: &str, at: f64) -> Body {
             parent: None,
             name: id.into(),
             ring: ring(13.0 + at, 51.0),
-            base_rev: 0,
+            base_rev,
         },
     }
 }

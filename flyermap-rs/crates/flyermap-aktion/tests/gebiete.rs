@@ -73,6 +73,23 @@ fn a_gebiet_is_a_valid_outline_that_lies_over_no_other_of_its_world() {
 }
 
 #[test]
+fn only_giving_a_gebiet_to_another_gruppe_tells_the_host_that_readers_changed() {
+    // a reader of the old Gruppe loses the right; the entry that says so is about a Gebiet it may not see any more, so it never reaches it: the host
+    // has to tell it to take a new snapshot
+    let mut w = World::standard();
+    let admin = who::admin();
+    let redrawn = w.send(&admin, edit("n1", Some("nord"), square(13.0, 51.0, 0.004), 1));
+    assert!(redrawn.reply.verdict.is_accepted() && !redrawn.rights_moved, "a new outline moves no rights");
+    let given = w.send(&admin, edit("n1", Some("sued"), square(13.0, 51.0, 0.004), 2));
+    assert!(given.reply.verdict.is_accepted() && given.rights_moved, "a new Gruppe does");
+    assert_eq!(given.floor, 0);
+    let marked = w.send(&admin, marks("s1", vec![mark("h:1", Status::Completed, op(T0, "a"))]));
+    assert!(marked.reply.verdict.is_accepted() && !marked.rights_moved);
+    let refused = w.send(&admin, edit("n1", Some("nord"), square(13.0, 51.0, 0.004), 1));
+    assert!(!refused.reply.verdict.is_accepted() && !refused.rights_moved, "a refused command moved nothing");
+}
+
+#[test]
 fn a_lead_drawing_over_the_gebiet_of_another_gruppe_is_refused_and_told_which() {
     // every outline of the own world is known to somebody who draws in it, so the name is given (it is withheld from a caller who may not see the outline)
     let mut w = World::standard();
