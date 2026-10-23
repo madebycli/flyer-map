@@ -25,9 +25,9 @@
 .fm-live-tag { flex: none; display: inline-flex; align-items: center; gap: 0.4rem; height: 2rem; padding: 0 0.75rem; border-radius: 999px; background: var(--glass); box-shadow: var(--shadow); color: var(--on); font: 800 0.74rem var(--font); letter-spacing: 0.06em; text-transform: uppercase; }
 .fm-live-tag i { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--primary); animation: fm-pulse 1.8s ease-in-out infinite; }
 @keyframes fm-pulse { 50% { opacity: 0.35; transform: scale(0.8); } }
-.fm-live-chips { display: flex; gap: 0.4rem; min-width: 0; padding: 0.1rem 0.1rem 0.4rem; margin-bottom: -0.3rem; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; scroll-snap-type: x proximity; }
+.fm-live-chips { display: flex; gap: 0.4rem; min-width: 0; padding: 0.25rem 0.25rem 0.9rem; margin: -0.15rem -0.25rem -0.75rem; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; scroll-snap-type: x proximity; }
 .fm-live-chips::-webkit-scrollbar { display: none; }
-.fm-chip { flex: none; display: inline-flex; align-items: center; gap: 0.5rem; min-height: var(--q); padding: 0.15rem 0.9rem 0.15rem 0.2rem; border: 0; border-radius: 999px; background: var(--glass); box-shadow: var(--shadow); color: var(--on); text-align: left; cursor: pointer; scroll-snap-align: start; transition: transform 120ms var(--ease), background var(--t); }
+.fm-chip { flex: none; display: inline-flex; align-items: center; gap: 0.5rem; min-height: var(--q); padding: 0.15rem 0.9rem 0.15rem 0.2rem; border: 0; border-radius: 999px; background: var(--glass); box-shadow: 0 1px 5px rgb(0 0 0 / 24%); color: var(--on); text-align: left; cursor: pointer; scroll-snap-align: start; transition: transform 120ms var(--ease), background var(--t); }
 .fm-chip:active { transform: scale(0.96); }
 .fm-chip:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 .fm-chip[aria-pressed="true"] { background: var(--primary-container); color: var(--on-primary-container); box-shadow: 0 0 0 2px var(--primary), var(--shadow); }
